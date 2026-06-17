@@ -9,6 +9,10 @@ const PORT = process.env.PORT || 5000;
 app.use(cors());
 app.use(express.json());
 
+app.get('/', (req, res) => {
+  res.send('RuralSync Backend API is running. Use /api/orders to interact.');
+});
+
 const DB_FILE = path.join(__dirname, 'db_cloud.json');
 
 // Helper to read database
@@ -77,6 +81,7 @@ app.post('/api/orders', (req, res) => {
     // Bulk sync from IndexedDB
     const newOrders = incoming.map(o => ({
       ...o,
+      id: o.id || 'ord_' + Math.random().toString(36).substr(2, 9),
       status: 'Sent', // Status transitions from Buffered Offline -> Sent
       syncedAt: new Date().toISOString()
     }));
@@ -98,6 +103,7 @@ app.post('/api/orders', (req, res) => {
     // Single order placed directly online
     const newOrder = {
       ...incoming,
+      id: incoming.id || 'ord_' + Math.random().toString(36).substr(2, 9),
       status: 'Sent',
       syncedAt: new Date().toISOString()
     };

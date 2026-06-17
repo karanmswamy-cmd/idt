@@ -878,8 +878,8 @@ export default function App() {
                       )}
                       
                       {cloudOrders.slice().reverse().map(order => (
-                        <tr key={order.id} className="hover:bg-slate-900/40">
-                          <td className="py-3 px-3 font-mono text-slate-400">#{order.id.slice(0, 6)}</td>
+                        <tr key={order.id || Math.random().toString()} className="hover:bg-slate-900/40">
+                          <td className="py-3 px-3 font-mono text-slate-400">#{order.id ? order.id.slice(0, 6) : 'N/A'}</td>
                           <td className="py-3 px-3 font-bold text-white">{order.productName}</td>
                           <td className="py-3 px-3 text-slate-200">{order.quantity}</td>
                           <td className="py-3 px-3">
@@ -1003,8 +1003,8 @@ export default function App() {
                       )}
                       
                       {cloudOrders.slice().reverse().map(order => (
-                        <tr key={order.id} className="hover:bg-slate-900/40">
-                          <td className="py-3 px-3 font-mono text-slate-400">#{order.id.slice(0, 6)}</td>
+                        <tr key={order.id || Math.random().toString()} className="hover:bg-slate-900/40">
+                          <td className="py-3 px-3 font-mono text-slate-400">#{order.id ? order.id.slice(0, 6) : 'N/A'}</td>
                           <td className="py-3 px-3 font-medium text-slate-300">Mandya Agri-Hub</td>
                           <td className="py-3 px-3 font-bold text-white">{order.productName}</td>
                           <td className="py-3 px-3 text-slate-300">{order.quantity}</td>
