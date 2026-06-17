@@ -9,9 +9,8 @@ const PORT = process.env.PORT || 5000;
 app.use(cors());
 app.use(express.json());
 
-app.get('/', (req, res) => {
-  res.send('RuralSync Backend API is running. Use /api/orders to interact.');
-});
+// Serve static files from the React frontend build
+app.use(express.static(path.join(__dirname, '../frontend/dist')));
 
 const DB_FILE = path.join(__dirname, 'db_cloud.json');
 
@@ -214,6 +213,11 @@ app.get('/api/device/events', (req, res) => {
   // Reset the event immediately so the ESP32 buzzer only beeps once
   activeEvent = 'NONE';
   res.json({ event: responseEvent });
+});
+
+// Catch-all route to serve the React application for non-API requests
+app.get('*', (req, res) => {
+  res.sendFile(path.join(__dirname, '../frontend/dist/index.html'));
 });
 
 // Express Server Startup

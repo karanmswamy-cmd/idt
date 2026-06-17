@@ -24,7 +24,7 @@ import type { OfflineOrder } from './db/offlineDb';
 import { translations } from './translations';
 import type { Language, TranslationSchema } from './translations';
 
-const API_BASE = 'http://localhost:5000/api';
+const API_BASE = '/api';
 
 interface CloudOrder {
   id: string;
