@@ -3,12 +3,16 @@
 #include <HTTPClient.h>
 #include <LiquidCrystal_I2C.h>
 #include <WiFi.h>
+#include <WiFiClientSecure.h>
 
 // --- WiFi / Server Configuration ---
 const char *ssid     = "YOUR_WIFI_SSID";         // Edit to your Wi-Fi SSID
 const char *password = "YOUR_WIFI_PASSWORD";      // Edit to your Wi-Fi Password
 const char *serverUrl =
-    "http://192.168.1.100:5000"; // Express Backend IP and Port
+    "https://y-production-3628.up.railway.app"; // Railway deployed backend (HTTPS)
+
+// --- HTTPS client (skip certificate verification for simplicity) ---
+WiFiClientSecure secureClient;
 
 // --- PIN Definitions ---
 const int BUZZER_PIN = 12; // GPIO 12 (Connect active buzzer)
@@ -162,52 +166,112 @@ void triggerBuzzer(int beepCount, int beepDurationMs, int delayBetweenBeepsMs) {
 // ============================================================
 //  FETCH LCD DATA FROM BACKEND
 // ============================================================
-void fetchLcdData() {
-  HTTPClient http;
-  String endpoint = String(serverUrl) + "/api/device/lcd-data";
-  http.begin(endpoint);
-  int httpCode = http.GET();
+bool fetchLcdData() {
+  bool success = false;
 
-  if (httpCode == 200) {
-    String payload = http.getString();
-    // Need larger doc for array of orders
-    DynamicJsonDocument doc(1024);
-    DeserializationError error = deserializeJson(doc, payload);
+  // --- Try new /api/device/lcd-data endpoint first ---
+  {
+    HTTPClient http;
+    String endpoint = String(serverUrl) + "/api/device/lcd-data";
+    http.begin(secureClient, endpoint);
+    int httpCode = http.GET();
 
-    if (!error) {
-      totalOrders   = doc["totalOrders"].as<int>();
-      bufferedCount = doc["bufferedOrders"].as<int>();
-      connectivity  = doc["connectivity"].as<String>();
-      syncStatus    = doc["syncStatus"].as<String>();
+    if (httpCode == 200) {
+      String payload = http.getString();
+      DynamicJsonDocument doc(1536);
+      DeserializationError error = deserializeJson(doc, payload);
 
-      // Parse orders array
-      JsonArray arr = doc["orders"].as<JsonArray>();
-      orderCount = 0;
-      for (JsonObject obj : arr) {
-        if (orderCount >= MAX_ORDERS) break;
-        orders[orderCount].productName = obj["productName"].as<String>();
-        orders[orderCount].quantity    = obj["quantity"].as<int>();
-        orders[orderCount].status      = obj["status"].as<String>();
-        orders[orderCount].priority    = obj["priority"].as<String>();
-        orderCount++;
+      if (!error) {
+        totalOrders   = doc["totalOrders"].as<int>();
+        bufferedCount = doc["bufferedOrders"].as<int>();
+        connectivity  = doc["connectivity"].as<String>();
+        syncStatus    = doc["syncStatus"].as<String>();
+
+        JsonArray arr = doc["orders"].as<JsonArray>();
+        orderCount = 0;
+        for (JsonObject obj : arr) {
+          if (orderCount >= MAX_ORDERS) break;
+          orders[orderCount].productName = obj["productName"].as<String>();
+          orders[orderCount].quantity    = obj["quantity"].as<int>();
+          orders[orderCount].status      = obj["status"].as<String>();
+          orders[orderCount].priority    = obj["priority"].as<String>();
+          orderCount++;
+        }
+        success = true;
+        Serial.print("lcd-data OK: ");
+        Serial.print(orderCount);
+        Serial.println(" orders loaded");
+      } else {
+        Serial.print("lcd-data JSON err: ");
+        Serial.println(error.c_str());
       }
-
-      Serial.print("LCD Data: ");
-      Serial.print(totalOrders);
-      Serial.print(" orders, ");
-      Serial.print(bufferedCount);
-      Serial.print(" buffered, ");
-      Serial.print(orderCount);
-      Serial.println(" shown on LCD");
     } else {
-      Serial.print("JSON parse error: ");
-      Serial.println(error.c_str());
+      Serial.print("lcd-data HTTP ");
+      Serial.println(httpCode);
     }
-  } else {
-    Serial.print("lcd-data HTTP error: ");
-    Serial.println(httpCode);
+    http.end();
   }
-  http.end();
+
+  // --- Fallback: read /api/orders directly if lcd-data failed ---
+  if (!success) {
+    HTTPClient http;
+    String endpoint = String(serverUrl) + "/api/orders";
+    http.begin(secureClient, endpoint);
+    int httpCode = http.GET();
+
+    if (httpCode == 200) {
+      String payload = http.getString();
+      DynamicJsonDocument doc(2048);
+      DeserializationError error = deserializeJson(doc, payload);
+
+      if (!error && doc.is<JsonArray>()) {
+        JsonArray arr = doc.as<JsonArray>();
+        totalOrders = arr.size();
+        orderCount = 0;
+
+        // Take last 5 orders (most recent)
+        int startIdx = (totalOrders > MAX_ORDERS) ? totalOrders - MAX_ORDERS : 0;
+        int idx = 0;
+        for (JsonObject obj : arr) {
+          if (idx >= startIdx && orderCount < MAX_ORDERS) {
+            orders[orderCount].productName = obj["productName"].as<String>();
+            orders[orderCount].quantity    = obj["quantity"].as<int>();
+            orders[orderCount].status      = obj["status"].as<String>();
+            orders[orderCount].priority    = obj["priority"].as<String>();
+            orderCount++;
+          }
+          idx++;
+        }
+        success = true;
+        Serial.print("/api/orders fallback OK: ");
+        Serial.print(orderCount);
+        Serial.println(" orders loaded");
+      } else {
+        Serial.println("/api/orders JSON err");
+      }
+    } else {
+      Serial.print("/api/orders HTTP ");
+      Serial.println(httpCode);
+      // Show error on LCD so user can see
+      lcdScreen("Fetch Error     ", "HTTP:" + String(httpCode) + "         ");
+    }
+    http.end();
+  }
+
+  // --- Debug: print orders to Serial ---
+  for (int i = 0; i < orderCount; i++) {
+    Serial.print("  Order ");
+    Serial.print(i);
+    Serial.print(": ");
+    Serial.print(orders[i].productName);
+    Serial.print(" x");
+    Serial.print(orders[i].quantity);
+    Serial.print(" [");
+    Serial.print(orders[i].status);
+    Serial.println("]");
+  }
+
+  return success;
 }
 
 // ============================================================
@@ -216,7 +280,7 @@ void fetchLcdData() {
 void fetchEvents() {
   HTTPClient http;
   String endpoint = String(serverUrl) + "/api/device/events";
-  http.begin(endpoint);
+  http.begin(secureClient, endpoint);
   int httpCode = http.GET();
 
   if (httpCode == 200) {
@@ -291,9 +355,22 @@ void setup() {
   lcdWifiConnected(ipStr);
   delay(2000);
 
-  // Initial data fetch
-  fetchLcdData();
-  lcdShowStatus();
+  // --- HTTPS: skip certificate verification ---
+  secureClient.setInsecure();
+  Serial.println("HTTPS client ready (insecure mode)");
+
+  // Initial data fetch — show first order immediately if available
+  bool fetched = fetchLcdData();
+  if (fetched && orderCount > 0) {
+    // Show first order right away
+    idleDisplayMode = 1;
+    lcdShowOrder(0);
+    Serial.print("Showing order: ");
+    Serial.println(orders[0].productName);
+  } else {
+    lcdShowStatus();
+  }
+  lastDisplayToggleTime = millis();
 
   triggerBuzzer(2, 100, 100);
   Serial.println("RuralSync ESP32 ready. Listening...");
@@ -350,6 +427,10 @@ void loop() {
     if (WiFi.status() == WL_CONNECTED) {
       fetchEvents();
       fetchLcdData();
+      // Force display refresh after new data
+      if (!lcdShowingEvent) {
+        lastDisplayToggleTime = millis() - displayToggleInterval;
+      }
     } else {
       Serial.println("WiFi disconnected!");
       lcd.clear();
