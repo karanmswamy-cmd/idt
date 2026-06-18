@@ -202,9 +202,33 @@ app.get('/api/device/status', (req, res) => {
   });
 });
 
-// GET /api/device/latest-order
+// GET /api/device/latest-order (in-memory fallback)
 app.get('/api/device/latest-order', (req, res) => {
   res.json(latestOrder);
+});
+
+// GET /api/device/lcd-data — reads REAL orders from the DB file for LCD display
+// Returns: { totalOrders, bufferedOrders, orders: [ {productName, quantity, status} ... ] }
+app.get('/api/device/lcd-data', (req, res) => {
+  const db = readDb();
+  const allOrders = db.orders || [];
+  
+  // Get the last 5 orders (most recent first) for LCD cycling
+  const recentOrders = allOrders.slice(-5).reverse().map(o => ({
+    productName: o.productName || 'Unknown',
+    quantity: o.quantity || 0,
+    status: o.status || 'Unknown',
+    priority: o.priority || '',
+    id: o.id || ''
+  }));
+
+  res.json({
+    totalOrders: allOrders.length,
+    bufferedOrders: deviceStatus.bufferedOrders,
+    connectivity: deviceStatus.connectivity,
+    syncStatus: deviceStatus.syncStatus,
+    orders: recentOrders
+  });
 });
 
 // GET /api/device/events
